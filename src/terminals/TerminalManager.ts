@@ -26,7 +26,9 @@ export class TerminalManager {
     }
 
     const shell = this.getDefaultShell();
-    const args = command ? ["-c", command] : [];
+    const platform = os.platform();
+    const shellFlag = platform === "win32" ? "/c" : "-c";
+    const args = command ? [shellFlag, command] : [];
 
     const ptyProcess = pty.spawn(shell, args, {
       name: "xterm-256color",
