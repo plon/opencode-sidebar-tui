@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as pty from "node-pty";
 import * as os from "os";
+import * as path from "path";
 
 export interface Terminal {
   id: string;
@@ -25,12 +26,10 @@ export class TerminalManager {
       this.killTerminal(id);
     }
 
-    const shell = this.getDefaultShell();
-    const platform = os.platform();
-    const shellFlag = platform === "win32" ? "/c" : "-c";
-    const args = command ? [shellFlag, command] : [];
+    const { shell, args: shellArgs } = this.getShellConfig();
+    const ptyArgs = command ? [...shellArgs, command] : [];
 
-    const ptyProcess = pty.spawn(shell, args, {
+    const ptyProcess = pty.spawn(shell, ptyArgs, {
       name: "xterm-256color",
       cols: 80,
       rows: 24,
@@ -102,11 +101,29 @@ export class TerminalManager {
     this._onExit.dispose();
   }
 
-  private getDefaultShell(): string {
-    const platform = os.platform();
-    if (platform === "win32") {
-      return process.env.COMSPEC || "cmd.exe";
+  private getShellConfig(): { shell: string; args: string[] } {
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const overrideShell = config.get<string>("shellPath");
+    const overrideArgs = config.get<string[]>("shellArgs");
+
+    const shell =
+      overrideShell ||
+      vscode.env.shell ||
+      (os.platform() === "win32"
+        ? process.env.COMSPEC || "cmd.exe"
+        : process.env.SHELL || "/bin/bash");
+
+    if (overrideArgs && overrideArgs.length > 0) {
+      return { shell, args: overrideArgs };
     }
-    return process.env.SHELL || "/bin/bash";
+
+    const shellName = path.basename(shell).toLowerCase();
+    if (os.platform() === "win32") {
+      if (shellName === "cmd.exe" || shellName === "cmd")
+        return { shell, args: ["/c"] };
+      if (shellName.includes("powershell") || shellName.includes("pwsh"))
+        return { shell, args: ["-Command"] };
+    }
+    return { shell, args: ["-c"] };
   }
 }

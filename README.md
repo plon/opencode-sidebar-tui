@@ -101,7 +101,7 @@ Available settings in VS Code settings (Cmd+,):
 
 - VS Code 1.106.0 or higher
 - Node.js 18.0.0 or higher
-- OpenCode installed and accessible via `omo` or `opencode` command
+- OpenCode installed and accessible via `opencode` command
 
 ## Development
 

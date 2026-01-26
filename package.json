@@ -2,7 +2,7 @@
   "name": "opencode-sidebar-tui",
   "displayName": "OpenCode Sidebar TUI",
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "ilseoblee",
   "icon": "icon.png",
   "engines": {
@@ -205,6 +205,19 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start OpenCode when the sidebar is opened (only when visible, not on VS Code reload)"
+        },
+        "opencodeTui.shellPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom shell path to use for the terminal. Leave empty to use VS Code's default shell. Useful for specifying PowerShell, Git Bash, or other shells on Windows."
+        },
+        "opencodeTui.shellArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Custom arguments to pass to the shell. Leave empty for automatic detection. Example: [\"/c\"] for cmd.exe or [\"-Command\"] for PowerShell."
         }
       }
     }
