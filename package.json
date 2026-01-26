@@ -4,6 +4,7 @@
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
   "version": "0.1.0",
   "publisher": "ilseoblee",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.106.0",
     "node": ">=18.0.0"
