@@ -15,12 +15,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Node.js environment (version 18 as required by package.json)
+      # Step 2: Set up Node.js environment (version 20 as required by devDependencies)
       # Includes npm cache for faster subsequent runs
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: "npm"
 
       # Step 3: Install project dependencies using clean install
