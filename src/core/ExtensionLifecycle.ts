@@ -60,14 +60,6 @@ export class ExtensionLifecycle {
       },
     );
 
-    // Clear terminal command
-    const clearCommand = vscode.commands.registerCommand(
-      "opencodeTui.clear",
-      () => {
-        this.tuiProvider?.clearTerminal();
-      },
-    );
-
     // Send selected text to terminal
     const sendToTerminalCommand = vscode.commands.registerCommand(
       "opencodeTui.sendToTerminal",
@@ -174,7 +166,6 @@ export class ExtensionLifecycle {
     context.subscriptions.push(
       startCommand,
       restartCommand,
-      clearCommand,
       sendToTerminalCommand,
       sendAtMentionCommand,
       sendAllOpenFilesCommand,

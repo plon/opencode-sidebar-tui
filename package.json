@@ -3,7 +3,7 @@
   "displayName": "OpenCode Sidebar TUI",
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
   "version": "0.1.4",
-  "publisher": "ilseoblee",
+  "publisher": "islee",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.106.0",
@@ -62,12 +62,6 @@
         "category": "OpenCode TUI"
       },
       {
-        "command": "opencodeTui.clear",
-        "title": "Clear Terminal",
-        "category": "OpenCode TUI",
-        "icon": "$(clear-all)"
-      },
-      {
         "command": "opencodeTui.sendToTerminal",
         "title": "Send to OpenCode Terminal",
         "category": "OpenCode TUI"
@@ -94,11 +88,6 @@
           "command": "opencodeTui.restart",
           "when": "view == opencodeTui",
           "group": "navigation@1"
-        },
-        {
-          "command": "opencodeTui.clear",
-          "when": "view == opencodeTui",
-          "group": "navigation@2"
         }
       ],
       "explorer/context": [
@@ -245,6 +234,7 @@
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-prettier": "^5.5.4",
+    "ovsx": "^0.10.8",
     "prettier": "^3.7.2",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",

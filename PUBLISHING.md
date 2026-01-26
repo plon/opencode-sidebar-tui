@@ -1,17 +1,53 @@
-# Publishing to VS Code Marketplace
+# Publishing Guide
 
-This guide will help you publish the **OpenCode Sidebar TUI** extension to the VS Code Marketplace.
+This guide will help you publish the **OpenCode Sidebar TUI** extension to both the VS Code Marketplace and the OpenVSX Registry.
 
-## Prerequisites Checklist
+## Supported Marketplaces
 
-- ✅ Extension built and packaged
-- ✅ Version: 0.1.0
-- ✅ Publisher: ilseoblee
-- ✅ Repository: https://github.com/ilseoblee/opencode-sidebar-tui
-- ✅ License: MIT
-- ✅ README: Comprehensive documentation
+- **VS Code Marketplace**: The official Microsoft marketplace for VS Code.
+- **OpenVSX Registry**: An open-source alternative used by VSCodium, Eclipse Theia, Gitpod, etc.
 
-## Step-by-Step Publishing Process
+## Automated Publishing (Recommended) ✅
+
+The most reliable way to publish is using the built-in GitHub Actions workflow. This automatically publishes to **both** marketplaces whenever a new version tag is pushed.
+
+### 1. Setup GitHub Secrets
+
+You must add the following secrets to your GitHub repository (**Settings** → **Secrets and variables** → **Actions**):
+
+| Secret Name  | Purpose                   | Where to Get                            |
+| ------------ | ------------------------- | --------------------------------------- |
+| `VSCE_PAT`   | VS Code Marketplace Token | [Azure DevOps](https://dev.azure.com)   |
+| `OVSX_TOKEN` | OpenVSX Registry Token    | [OpenVSX Profile](https://open-vsx.org) |
+
+#### How to get VSCE_PAT:
+
+1. Go to [Azure DevOps](https://dev.azure.com).
+2. Create a PAT with **Marketplace: Manage** scope (detailed in Manual Step 2 below).
+
+#### How to get OVSX_TOKEN:
+
+1. Sign in to [OpenVSX Registry](https://open-vsx.org) using GitHub/GitLab.
+2. Go to your profile settings.
+3. Generate and copy a new access token.
+
+### 2. Trigger the Workflow
+
+To publish a new version (e.g., `0.1.5`):
+
+```bash
+# Update version in package.json and create tag
+npm version 0.1.5
+
+# Push the tag to GitHub
+git push origin v0.1.5
+```
+
+The workflow at `.github/workflows/publish.yml` will automatically build, package, and publish the extension to both marketplaces.
+
+---
+
+## Manual Publishing to VS Code Marketplace
 
 ### Step 1: Create Publisher Account
 
@@ -53,7 +89,7 @@ When prompted, paste your Personal Access Token.
 
 ### Step 4: Publish the Extension
 
-#### Option A: Publish Current Version (0.1.0)
+#### Option A: Publish Current Version (0.1.4)
 
 ```bash
 npx @vscode/vsce publish
@@ -62,13 +98,13 @@ npx @vscode/vsce publish
 #### Option B: Publish and Increment Version
 
 ```bash
-# Patch version (0.1.0 -> 0.1.1)
+# Patch version (0.1.4 -> 0.1.5)
 npx @vscode/vsce publish patch
 
-# Minor version (0.1.0 -> 0.2.0)
+# Minor version (0.1.4 -> 0.2.0)
 npx @vscode/vsce publish minor
 
-# Major version (0.1.0 -> 1.0.0)
+# Major version (0.1.4 -> 1.0.0)
 npx @vscode/vsce publish major
 ```
 
@@ -78,18 +114,49 @@ npx @vscode/vsce publish major
 2. Visit: https://marketplace.visualstudio.com/items?itemName=ilseoblee.opencode-sidebar-tui
 3. Search in VS Code: "OpenCode Sidebar TUI"
 
+---
+
+## Manual Publishing to OpenVSX Registry
+
+If you need to publish to OpenVSX manually:
+
+### Step 1: Create OpenVSX Account
+
+1. Visit [open-vsx.org](https://open-vsx.org) and sign in (GitHub/GitLab/Google).
+2. Go to your **Profile** → **Settings**.
+3. Generate a new **Access Token**.
+
+### Step 2: Install ovsx CLI
+
+```bash
+npm install -g ovsx
+```
+
+### Step 3: Publish
+
+```bash
+ovsx publish -p YOUR_OVSX_TOKEN
+```
+
+### Step 4: Verify
+
+Visit: [https://open-vsx.org/extension/ilseoblee/opencode-sidebar-tui](https://open-vsx.org/extension/ilseoblee/opencode-sidebar-tui)
+
+---
+
 ## Publishing Status
 
-**Current Status**: ❌ Not Published (awaiting PAT authentication)
+**Current Status**: 🚢 Ready for automated publishing
+**Current Version**: 0.1.4
 
-**Error encountered**:
+## Prerequisites Checklist
 
-```
-ERROR: The Personal Access Token verification has failed.
-TF400813: The user is not authorized to access this resource.
-```
-
-**Resolution**: Follow Steps 1-4 above to authenticate and publish.
+- ✅ Extension built and packaged
+- ✅ Version: 0.1.4
+- ✅ Publisher: ilseoblee
+- ✅ Repository: https://github.com/ilseoblee/opencode-sidebar-tui
+- ✅ License: MIT
+- ✅ README: Comprehensive documentation
 
 ## Troubleshooting
 
