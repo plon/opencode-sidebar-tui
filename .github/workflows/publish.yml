@@ -10,6 +10,7 @@ jobs:
   publish:
     name: Publish to Marketplaces
     runs-on: ubuntu-latest
+    environment: ilseoblee
     steps:
       # Step 1: Checkout the source code from the repository
       - name: Checkout code
@@ -31,10 +32,16 @@ jobs:
       - name: Build and package extension
         run: npm run package
 
-      # Step 5: Publish the extension to both VS Code Marketplace and OpenVSX Registry
-      # Uses secrets VSCE_PAT (for VS Code) and OVSX_TOKEN (for OpenVSX)
-      - name: Publish to Marketplaces
+      # Step 5: Publish to VS Code Marketplace
+      - name: Publish to VS Code Marketplace
         uses: HaaLeo/publish-vscode-extension@v1
         with:
           pat: ${{ secrets.VSCE_PAT }}
-          ovsxToken: ${{ secrets.OVSX_TOKEN }}
+          registryUrl: https://marketplace.visualstudio.com
+
+      # Step 6: Publish to Open VSX Registry
+      - name: Publish to Open VSX Registry
+        uses: HaaLeo/publish-vscode-extension@v1
+        with:
+          pat: ${{ secrets.OVSX_TOKEN }}
+          registryUrl: https://open-vsx.org
