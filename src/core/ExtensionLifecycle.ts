@@ -68,7 +68,148 @@ export class ExtensionLifecycle {
       },
     );
 
-    context.subscriptions.push(startCommand, restartCommand, clearCommand);
+    // Send selected text to terminal
+    const sendToTerminalCommand = vscode.commands.registerCommand(
+      "opencodeTui.sendToTerminal",
+      () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && !editor.selection.isEmpty) {
+          const selectedText = editor.document.getText(editor.selection);
+          this.terminalManager?.writeToTerminal(
+            "opencode-main",
+            selectedText + "\n",
+          );
+          vscode.window.showInformationMessage("Sent to OpenCode");
+        }
+      },
+    );
+
+    // Send current file reference (@filename)
+    const sendAtMentionCommand = vscode.commands.registerCommand(
+      "opencodeTui.sendAtMention",
+      () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const fileRef = this.formatFileRefWithLineNumbers(editor);
+          this.terminalManager?.writeToTerminal("opencode-main", fileRef + " ");
+          vscode.window.showInformationMessage(`Sent ${fileRef}`);
+        }
+      },
+    );
+
+    // Send all open file references
+    const sendAllOpenFilesCommand = vscode.commands.registerCommand(
+      "opencodeTui.sendAllOpenFiles",
+      () => {
+        const openFiles = vscode.window.visibleTextEditors
+          .map((editor) => this.formatFileRef(editor.document.uri))
+          .join(" ");
+
+        if (openFiles) {
+          this.terminalManager?.writeToTerminal(
+            "opencode-main",
+            openFiles + " ",
+          );
+          vscode.window.showInformationMessage("Sent all open files");
+        }
+      },
+    );
+
+    // Send file/folder from explorer context menu
+    const sendFileToTerminalCommand = vscode.commands.registerCommand(
+      "opencodeTui.sendFileToTerminal",
+      (uri: vscode.Uri) => {
+        if (uri) {
+          const fileRef = this.formatFileRef(uri);
+          this.terminalManager?.writeToTerminal("opencode-main", fileRef + " ");
+          vscode.window.showInformationMessage(`Sent ${fileRef}`);
+        }
+      },
+    );
+
+    // Generate git commit message
+    const generateCommitMessageCommand = vscode.commands.registerCommand(
+      "opencodeTui.generateCommitMessage",
+      async () => {
+        const gitExtension = vscode.extensions.getExtension("vscode.git");
+        if (!gitExtension) {
+          vscode.window.showErrorMessage("Git extension not found");
+          return;
+        }
+
+        const git = gitExtension.exports.getAPI(1);
+        if (git.repositories.length === 0) {
+          vscode.window.showErrorMessage("No git repository found");
+          return;
+        }
+
+        const repo = git.repositories[0];
+        const stagedChanges = repo.state.indexChanges;
+        const workingChanges = repo.state.workingTreeChanges;
+
+        let command: string;
+        if (stagedChanges && stagedChanges.length > 0) {
+          const stagedFiles = stagedChanges
+            .map((c: any) => `@${c.uri.fsPath}`)
+            .join(" ");
+          command = `opencode run "Generate a git commit message for these staged files: ${stagedFiles}"\n`;
+          vscode.window.showInformationMessage(
+            `Generating commit message for ${stagedChanges.length} staged file(s)`,
+          );
+        } else if (workingChanges && workingChanges.length > 0) {
+          const changedFiles = workingChanges
+            .map((c: any) => `@${c.uri.fsPath}`)
+            .join(" ");
+          command = `opencode run "Generate a git commit message for these changes: ${changedFiles}"\n`;
+          vscode.window.showInformationMessage(
+            `Generating commit message for ${workingChanges.length} changed file(s)`,
+          );
+        } else {
+          vscode.window.showWarningMessage("No changes to commit");
+          return;
+        }
+
+        this.terminalManager?.writeToTerminal("opencode-main", command);
+      },
+    );
+
+    context.subscriptions.push(
+      startCommand,
+      restartCommand,
+      clearCommand,
+      sendToTerminalCommand,
+      sendAtMentionCommand,
+      sendAllOpenFilesCommand,
+      sendFileToTerminalCommand,
+      generateCommitMessageCommand,
+    );
+  }
+
+  private formatFileRef(uri: vscode.Uri): string {
+    const relativePath = vscode.workspace.asRelativePath(uri, false);
+    return `@${relativePath}`;
+  }
+
+  private formatFileRefWithLineNumbers(editor: vscode.TextEditor): string {
+    const relativePath = vscode.workspace.asRelativePath(
+      editor.document.uri,
+      false,
+    );
+    let reference = `@${relativePath}`;
+
+    const selection = editor.selection;
+    if (!selection.isEmpty) {
+      const startLine = selection.start.line + 1;
+      const endLine = selection.end.line + 1;
+
+      if (startLine === endLine) {
+        reference += `#L${startLine}`;
+      } else {
+        reference += `#L${startLine}-L${endLine}`;
+      }
+    }
+
+    return reference;
   }
 
   async deactivate(): Promise<void> {

@@ -42,7 +42,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     }
 
     const config = vscode.workspace.getConfiguration("opencodeTui");
-    const command = config.get<string>("command", "omo");
+    const command = config.get<string>("command", "opencode -c");
 
     this.terminalManager.createTerminal(this.terminalId, command);
 
@@ -98,7 +98,15 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
           this.startOpenCode();
         }
         break;
+      case "filesDropped":
+        this.handleFilesDropped(message.files);
+        break;
     }
+  }
+
+  private handleFilesDropped(files: string[]): void {
+    const fileRefs = files.map((file) => `@${file}`).join(" ");
+    this.terminalManager.writeToTerminal(this.terminalId, fileRefs + " ");
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {

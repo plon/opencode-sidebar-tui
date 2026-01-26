@@ -64,7 +64,7 @@ Available settings in VS Code settings (Cmd+,):
 ```json
 {
   "opencodeTui.autoStart": true,
-  "opencodeTui.command": "omo",
+  "opencodeTui.command": "opencode -c",
   "opencodeTui.fontSize": 14,
   "opencodeTui.fontFamily": "monospace",
   "opencodeTui.cursorBlink": true,

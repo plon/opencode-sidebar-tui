@@ -76,6 +76,48 @@ function initTerminal(): void {
 
   resizeObserver.observe(container);
 
+  container.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.shiftKey) {
+      container.style.opacity = "0.7";
+    }
+  });
+
+  container.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    container.style.opacity = "1";
+  });
+
+  container.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    container.style.opacity = "1";
+
+    if (e.shiftKey && e.dataTransfer) {
+      const files: string[] = [];
+
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        const item = e.dataTransfer.items[i];
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) {
+            const filePath = (file as any).path || file.name;
+            files.push(filePath);
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        vscode.postMessage({
+          command: "filesDropped",
+          files: files,
+        });
+      }
+    }
+  });
+
   vscode.postMessage({ command: "ready" });
 }
 

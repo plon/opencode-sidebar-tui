@@ -65,6 +65,32 @@
         "title": "Clear Terminal",
         "category": "OpenCode TUI",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "opencodeTui.sendToTerminal",
+        "title": "Send to OpenCode Terminal",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.sendAtMention",
+        "title": "Send File Reference (@file)",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.sendAllOpenFiles",
+        "title": "Send All Open File References",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.sendFileToTerminal",
+        "title": "Send to OpenCode",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.generateCommitMessage",
+        "title": "Generate Commit Message with OpenCode",
+        "category": "OpenCode TUI",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {
@@ -79,8 +105,52 @@
           "when": "view == opencodeTui",
           "group": "navigation@2"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "opencodeTui.sendFileToTerminal",
+          "group": "2_workspace",
+          "when": "!explorerResourceIsFolder"
+        },
+        {
+          "command": "opencodeTui.sendFileToTerminal",
+          "group": "2_workspace",
+          "when": "explorerResourceIsFolder"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "opencodeTui.sendToTerminal",
+          "group": "navigation",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "opencodeTui.sendAtMention",
+          "group": "navigation"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "opencodeTui.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
       ]
     },
+    "keybindings": [
+      {
+        "command": "opencodeTui.sendAtMention",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "opencodeTui.sendAllOpenFiles",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a",
+        "when": "editorTextFocus"
+      }
+    ],
     "configuration": {
       "title": "OpenCode Sidebar TUI",
       "properties": {
@@ -91,8 +161,8 @@
         },
         "opencodeTui.command": {
           "type": "string",
-          "default": "omo",
-          "description": "Command to launch OpenCode (omo or opencode)"
+          "default": "opencode -c",
+          "description": "Command to launch OpenCode with arguments"
         },
         "opencodeTui.fontSize": {
           "type": "number",
