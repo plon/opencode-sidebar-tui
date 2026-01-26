@@ -79,6 +79,13 @@ export class ExtensionLifecycle {
             "opencode-main",
             selectedText + "\n",
           );
+
+          // Auto-focus sidebar if enabled
+          const config = vscode.workspace.getConfiguration("opencodeTui");
+          if (config.get<boolean>("autoFocusOnSend", true)) {
+            vscode.commands.executeCommand("opencodeTui.focus");
+          }
+
           vscode.window.showInformationMessage("Sent to OpenCode");
         }
       },
@@ -92,6 +99,13 @@ export class ExtensionLifecycle {
         if (editor) {
           const fileRef = this.formatFileRefWithLineNumbers(editor);
           this.terminalManager?.writeToTerminal("opencode-main", fileRef + " ");
+
+          // Auto-focus sidebar if enabled
+          const config = vscode.workspace.getConfiguration("opencodeTui");
+          if (config.get<boolean>("autoFocusOnSend", true)) {
+            vscode.commands.executeCommand("opencodeTui.focus");
+          }
+
           vscode.window.showInformationMessage(`Sent ${fileRef}`);
         }
       },
@@ -110,6 +124,13 @@ export class ExtensionLifecycle {
             "opencode-main",
             openFiles + " ",
           );
+
+          // Auto-focus sidebar if enabled
+          const config = vscode.workspace.getConfiguration("opencodeTui");
+          if (config.get<boolean>("autoFocusOnSend", true)) {
+            vscode.commands.executeCommand("opencodeTui.focus");
+          }
+
           vscode.window.showInformationMessage("Sent all open files");
         }
       },
@@ -122,54 +143,15 @@ export class ExtensionLifecycle {
         if (uri) {
           const fileRef = this.formatFileRef(uri);
           this.terminalManager?.writeToTerminal("opencode-main", fileRef + " ");
+
+          // Auto-focus sidebar if enabled
+          const config = vscode.workspace.getConfiguration("opencodeTui");
+          if (config.get<boolean>("autoFocusOnSend", true)) {
+            vscode.commands.executeCommand("opencodeTui.focus");
+          }
+
           vscode.window.showInformationMessage(`Sent ${fileRef}`);
         }
-      },
-    );
-
-    // Generate git commit message
-    const generateCommitMessageCommand = vscode.commands.registerCommand(
-      "opencodeTui.generateCommitMessage",
-      async () => {
-        const gitExtension = vscode.extensions.getExtension("vscode.git");
-        if (!gitExtension) {
-          vscode.window.showErrorMessage("Git extension not found");
-          return;
-        }
-
-        const git = gitExtension.exports.getAPI(1);
-        if (git.repositories.length === 0) {
-          vscode.window.showErrorMessage("No git repository found");
-          return;
-        }
-
-        const repo = git.repositories[0];
-        const stagedChanges = repo.state.indexChanges;
-        const workingChanges = repo.state.workingTreeChanges;
-
-        let command: string;
-        if (stagedChanges && stagedChanges.length > 0) {
-          const stagedFiles = stagedChanges
-            .map((c: any) => `@${c.uri.fsPath}`)
-            .join(" ");
-          command = `opencode run "Generate a git commit message for these staged files: ${stagedFiles}"\n`;
-          vscode.window.showInformationMessage(
-            `Generating commit message for ${stagedChanges.length} staged file(s)`,
-          );
-        } else if (workingChanges && workingChanges.length > 0) {
-          const changedFiles = workingChanges
-            .map((c: any) => `@${c.uri.fsPath}`)
-            .join(" ");
-          command = `opencode run "Generate a git commit message for these changes: ${changedFiles}"\n`;
-          vscode.window.showInformationMessage(
-            `Generating commit message for ${workingChanges.length} changed file(s)`,
-          );
-        } else {
-          vscode.window.showWarningMessage("No changes to commit");
-          return;
-        }
-
-        this.terminalManager?.writeToTerminal("opencode-main", command);
       },
     );
 
@@ -181,7 +163,6 @@ export class ExtensionLifecycle {
       sendAtMentionCommand,
       sendAllOpenFilesCommand,
       sendFileToTerminalCommand,
-      generateCommitMessageCommand,
     );
   }
 

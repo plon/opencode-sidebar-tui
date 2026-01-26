@@ -31,8 +31,22 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     });
 
     const config = vscode.workspace.getConfiguration("opencodeTui");
-    if (config.get<boolean>("autoStart", true)) {
-      this.startOpenCode();
+    if (config.get<boolean>("autoStartOnOpen", true)) {
+      // Only start if sidebar is currently visible
+      if (webviewView.visible) {
+        this.startOpenCode();
+      } else {
+        // Wait until sidebar becomes visible
+        const visibilityListener = webviewView.onDidChangeVisibility(() => {
+          if (webviewView.visible && !this.isStarted) {
+            this.startOpenCode();
+            visibilityListener.dispose(); // Only trigger once
+          }
+        });
+
+        // Clean up listener when view is disposed
+        webviewView.onDidDispose(() => visibilityListener.dispose());
+      }
     }
   }
 
@@ -105,7 +119,9 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   private handleFilesDropped(files: string[]): void {
-    const fileRefs = files.map((file) => `@${file}`).join(" ");
+    const fileRefs = files
+      .map((file) => `@${vscode.workspace.asRelativePath(file)}`)
+      .join(" ");
     this.terminalManager.writeToTerminal(this.terminalId, fileRefs + " ");
   }
 

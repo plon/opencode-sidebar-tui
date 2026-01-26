@@ -10,7 +10,6 @@ Automatically render OpenCode TUI in VS Code sidebar with full terminal support.
 - **Keyboard Shortcuts**: Quick access with Cmd+Alt+L and Cmd+Alt+A
 - **Drag & Drop Support**: Hold Shift and drag files/folders to send as references
 - **Context Menu Integration**: Right-click files in Explorer or text in Editor to send to OpenCode
-- **Smart Git Commit Generation**: Automatically generates commit messages for staged or changed files
 - **Configurable**: Customize command, font, and terminal settings
 
 ## Installation
@@ -77,12 +76,6 @@ npx @vscode/vsce package
 - **Explorer**: Right-click any file or folder → "Send to OpenCode"
 - **Editor**: Right-click selected text → "Send to OpenCode Terminal"
 - **Editor**: Right-click anywhere → "Send File Reference (@file)"
-
-### Git Integration
-
-- **Generate Commit Message** - Click ✨ sparkle icon in Source Control toolbar
-  - Automatically detects staged vs unstaged files
-  - Uses `opencode run` to generate appropriate commit messages
 
 ### Drag & Drop
 

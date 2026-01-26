@@ -2,7 +2,7 @@
   "name": "opencode-sidebar-tui",
   "displayName": "OpenCode Sidebar TUI",
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "ilseoblee",
   "icon": "icon.png",
   "engines": {
@@ -35,7 +35,7 @@
         {
           "id": "opencodeTuiContainer",
           "title": "OpenCode",
-          "icon": "$(terminal)"
+          "icon": "resources/opencode-activity-bar.svg"
         }
       ]
     },
@@ -86,12 +86,6 @@
         "command": "opencodeTui.sendFileToTerminal",
         "title": "Send to OpenCode",
         "category": "OpenCode TUI"
-      },
-      {
-        "command": "opencodeTui.generateCommitMessage",
-        "title": "Generate Commit Message with OpenCode",
-        "category": "OpenCode TUI",
-        "icon": "$(sparkle)"
       }
     ],
     "menus": {
@@ -129,13 +123,6 @@
           "command": "opencodeTui.sendAtMention",
           "group": "navigation"
         }
-      ],
-      "scm/title": [
-        {
-          "command": "opencodeTui.generateCommitMessage",
-          "group": "navigation",
-          "when": "scmProvider == git"
-        }
       ]
     },
     "keybindings": [
@@ -150,6 +137,16 @@
         "key": "ctrl+alt+a",
         "mac": "cmd+alt+a",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "-workbench.action.quickOpen",
+        "key": "ctrl+p",
+        "when": "focusedView == 'opencodeTui'"
+      },
+      {
+        "command": "-workbench.action.quickOpenNavigateNextInFilePicker",
+        "key": "ctrl+p",
+        "when": "inFilesPicker && inQuickOpen"
       }
     ],
     "configuration": {
@@ -198,6 +195,16 @@
           "minimum": 0,
           "maximum": 100000,
           "description": "Maximum number of lines in scrollback buffer"
+        },
+        "opencodeTui.autoFocusOnSend": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically focus the OpenCode sidebar after sending file references or text"
+        },
+        "opencodeTui.autoStartOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start OpenCode when the sidebar is opened (only when visible, not on VS Code reload)"
         }
       }
     }

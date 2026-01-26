@@ -14,6 +14,7 @@ const vscode = acquireVsCodeApi();
 
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
+let isShiftKeyPressed = false;
 
 function initTerminal(): void {
   const container = document.getElementById("terminal-container");
@@ -79,7 +80,8 @@ function initTerminal(): void {
   container.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.shiftKey) {
+    isShiftKeyPressed = e.shiftKey;
+    if (isShiftKeyPressed) {
       container.style.opacity = "0.7";
     }
   });
@@ -95,7 +97,7 @@ function initTerminal(): void {
     e.stopPropagation();
     container.style.opacity = "1";
 
-    if (e.shiftKey && e.dataTransfer) {
+    if (isShiftKeyPressed && e.dataTransfer) {
       const files: string[] = [];
 
       for (let i = 0; i < e.dataTransfer.items.length; i++) {
@@ -116,6 +118,7 @@ function initTerminal(): void {
         });
       }
     }
+    isShiftKeyPressed = false;
   });
 
   vscode.postMessage({ command: "ready" });
