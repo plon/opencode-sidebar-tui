@@ -52,7 +52,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
 
   public focus(): void {
     if (this._view && this._view.webview) {
-      this._view.webview.postMessage({ command: "focusTerminal" });
+      this._view.webview.postMessage({ type: "focusTerminal" });
     }
   }
 
@@ -69,7 +69,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     this.terminalManager.onData((event) => {
       if (event.id === this.terminalId) {
         this._view?.webview.postMessage({
-          command: "terminalOutput",
+          type: "terminalOutput",
           data: event.data,
         });
       }
@@ -79,7 +79,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       if (id === this.terminalId) {
         this.isStarted = false;
         this._view?.webview.postMessage({
-          command: "terminalExited",
+          type: "terminalExited",
         });
       }
     });
@@ -95,14 +95,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     setTimeout(() => this.startOpenCode(), 100);
   }
 
-  clearTerminal(): void {
-    this._view?.webview.postMessage({
-      command: "clearTerminal",
-    });
-  }
-
   private handleMessage(message: any): void {
-    switch (message.command) {
+    switch (message.type) {
       case "terminalInput":
         this.terminalManager.writeToTerminal(this.terminalId, message.data);
         break;
@@ -119,16 +113,76 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         }
         break;
       case "filesDropped":
-        this.handleFilesDropped(message.files);
+        this.handleFilesDropped(message.files, message.shiftKey);
+        break;
+      case "openUrl":
+        vscode.env.openExternal(vscode.Uri.parse(message.url));
+        break;
+      case "openFile":
+        this.handleOpenFile(message.path, message.line, message.column);
         break;
     }
   }
 
-  private handleFilesDropped(files: string[]): void {
-    const fileRefs = files
-      .map((file) => `@${vscode.workspace.asRelativePath(file)}`)
-      .join(" ");
-    this.terminalManager.writeToTerminal(this.terminalId, fileRefs + " ");
+  private async handleOpenFile(
+    path: string,
+    line?: number,
+    column?: number,
+  ): Promise<void> {
+    try {
+      let uri: vscode.Uri;
+      if (vscode.Uri.parse(path).scheme === "file") {
+        uri = vscode.Uri.file(path);
+      } else if (path.startsWith("/")) {
+        uri = vscode.Uri.file(path);
+      } else {
+        // Relative path
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+          uri = vscode.Uri.joinPath(workspaceFolders[0].uri, path);
+        } else {
+          uri = vscode.Uri.file(path);
+        }
+      }
+
+      const selection = line
+        ? new vscode.Range(
+            Math.max(0, line - 1),
+            Math.max(0, (column || 1) - 1),
+            Math.max(0, line - 1),
+            Math.max(0, (column || 1) - 1),
+          )
+        : undefined;
+
+      await vscode.window.showTextDocument(uri, {
+        selection,
+        preview: true,
+      });
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to open file: ${path}`);
+    }
+  }
+
+  private handleFilesDropped(files: string[], shiftKey: boolean): void {
+    console.log(
+      "[PROVIDER] handleFilesDropped - files:",
+      files,
+      "shiftKey:",
+      shiftKey,
+    );
+    if (shiftKey) {
+      const fileRefs = files
+        .map((file) => `@${vscode.workspace.asRelativePath(file)}`)
+        .join(" ");
+      console.log("[PROVIDER] Writing with @:", fileRefs);
+      this.terminalManager.writeToTerminal(this.terminalId, fileRefs + " ");
+    } else {
+      const filePaths = files
+        .map((file) => vscode.workspace.asRelativePath(file))
+        .join(" ");
+      console.log("[PROVIDER] Writing without @:", filePaths);
+      this.terminalManager.writeToTerminal(this.terminalId, filePaths + " ");
+    }
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {
