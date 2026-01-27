@@ -129,7 +129,20 @@ function initTerminal(): void {
   }
 
   terminal.open(container);
-  fitAddon.fit();
+
+  // Use requestAnimationFrame for initial fit (waits for browser paint)
+  requestAnimationFrame(() => {
+    if (fitAddon && terminal) {
+      fitAddon.fit();
+    }
+  });
+
+  // Backup setTimeout to ensure sizing even if RAF fires too early
+  setTimeout(() => {
+    if (fitAddon && terminal) {
+      fitAddon.fit();
+    }
+  }, 100);
 
   terminal.onData((data) => {
     vscode.postMessage({
