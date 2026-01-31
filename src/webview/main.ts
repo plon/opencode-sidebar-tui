@@ -13,8 +13,270 @@ declare function acquireVsCodeApi(): {
 
 const vscode = acquireVsCodeApi();
 
+const style = document.createElement("style");
+style.textContent = `
+  .terminal-completion-widget {
+    position: absolute;
+    background-color: #252526;
+    border: 1px solid #454545;
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 13px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    min-width: 200px;
+    display: none;
+  }
+  .terminal-completion-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    color: #cccccc;
+    display: flex;
+    flex-direction: column;
+  }
+  .terminal-completion-item.selected {
+    background-color: #094771;
+    color: #ffffff;
+  }
+  .terminal-completion-item:hover {
+    background-color: #2a2d2e;
+  }
+  .terminal-completion-item.selected:hover {
+    background-color: #094771;
+  }
+  .terminal-completion-detail {
+    font-size: 0.85em;
+    opacity: 0.7;
+    margin-top: 2px;
+  }
+`;
+document.head.appendChild(style);
+
+class TerminalCompletionProvider {
+  private _terminal: Terminal;
+  private _element: HTMLElement;
+  private _isVisible: boolean = false;
+  private _terminals: { name: string; cwd: string }[] = [];
+  private _filteredTerminals: { name: string; cwd: string }[] = [];
+  private _selectedIndex: number = 0;
+  private _filter: string = "";
+  private _startColumn: number = 0;
+  private _pendingCheck: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(terminal: Terminal) {
+    this._terminal = terminal;
+    this._element = document.createElement("div");
+    this._element.className = "terminal-completion-widget";
+    document.body.appendChild(this._element);
+
+    this._element.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
+
+    this._element.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest(".terminal-completion-item");
+      if (item) {
+        const index = parseInt(item.getAttribute("data-index") || "0", 10);
+        this._selectItem(index);
+      }
+    });
+  }
+
+  public handleData(data: string) {
+    if (this._pendingCheck) {
+      clearTimeout(this._pendingCheck);
+    }
+    this._pendingCheck = setTimeout(() => {
+      this._pendingCheck = null;
+      this._checkTrigger();
+    }, 0);
+  }
+
+  public dispose() {
+    if (this._pendingCheck) {
+      clearTimeout(this._pendingCheck);
+      this._pendingCheck = null;
+    }
+    this._element.remove();
+  }
+
+  public updateTerminals(terminals: { name: string; cwd: string }[]) {
+    this._terminals = terminals;
+    if (this._isVisible) {
+      this._updateList();
+    }
+  }
+
+  public handleKey(event: KeyboardEvent): boolean {
+    if (!this._isVisible) {
+      return true;
+    }
+
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        this._selectedIndex =
+          (this._selectedIndex - 1 + this._filteredTerminals.length) %
+          this._filteredTerminals.length;
+        this._render();
+        return false;
+      case "ArrowDown":
+        event.preventDefault();
+        this._selectedIndex =
+          (this._selectedIndex + 1) % this._filteredTerminals.length;
+        this._render();
+        return false;
+      case "Enter":
+      case "Tab":
+        event.preventDefault();
+        this._selectItem(this._selectedIndex);
+        return false;
+      case "Escape":
+        event.preventDefault();
+        this._hide();
+        return false;
+      default:
+        return true;
+    }
+  }
+
+  private _checkTrigger() {
+    if (!this._terminal.buffer.active) return;
+
+    const buffer = this._terminal.buffer.active;
+    const cursorY = buffer.cursorY;
+    const cursorX = buffer.cursorX;
+    const line = buffer.getLine(cursorY);
+
+    if (!line) return;
+
+    const lineText = line.translateToString(true);
+    const textBeforeCursor = lineText.substring(0, cursorX);
+
+    const match = textBeforeCursor.match(/@terminal:([\w-]*)$/);
+
+    if (match) {
+      const matchText = match[0];
+      this._filter = match[1];
+      this._startColumn = cursorX - matchText.length;
+
+      if (!this._isVisible) {
+        vscode.postMessage({ type: "listTerminals" });
+        this._show();
+      }
+
+      this._updateList();
+    } else {
+      this._hide();
+    }
+  }
+
+  private _updateList() {
+    if (!this._filter) {
+      this._filteredTerminals = this._terminals;
+    } else {
+      const lowerFilter = this._filter.toLowerCase();
+      this._filteredTerminals = this._terminals.filter((t) =>
+        t.name.toLowerCase().includes(lowerFilter),
+      );
+    }
+
+    this._selectedIndex = 0;
+    this._render();
+  }
+
+  private _show() {
+    this._isVisible = true;
+    this._element.style.display = "block";
+    this._updatePosition();
+  }
+
+  private _hide() {
+    this._isVisible = false;
+    this._element.style.display = "none";
+  }
+
+  private _updatePosition() {
+    if (!this._terminal.element) return;
+
+    const cursorY = this._terminal.buffer.active.cursorY;
+
+    const termElement = this._terminal.element;
+    const cellWidth = termElement.clientWidth / this._terminal.cols;
+    const cellHeight = termElement.clientHeight / this._terminal.rows;
+
+    const top = (cursorY + 1) * cellHeight;
+    const left = this._startColumn * cellWidth;
+
+    const rect = termElement.getBoundingClientRect();
+
+    this._element.style.top = `${rect.top + top}px`;
+    this._element.style.left = `${rect.left + left}px`;
+  }
+
+  private _render() {
+    if (this._filteredTerminals.length === 0) {
+      this._element.innerHTML =
+        '<div class="terminal-completion-item">No matching terminals</div>';
+      return;
+    }
+
+    this._element.innerHTML = this._filteredTerminals
+      .map((term, index) => {
+        const isSelected = index === this._selectedIndex;
+        const name = this._escapeHtml(term.name);
+        const cwd = this._escapeHtml(term.cwd);
+        return `
+        <div class="terminal-completion-item ${isSelected ? "selected" : ""}" data-index="${index}">
+          <span>${name}</span>
+          <span class="terminal-completion-detail">${cwd}</span>
+        </div>
+      `;
+      })
+      .join("");
+
+    const selectedEl = this._element.querySelector(".selected");
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  private _selectItem(index: number) {
+    if (index < 0 || index >= this._filteredTerminals.length) return;
+
+    const term = this._filteredTerminals[index];
+    const toInsert = term.name;
+
+    const charsToDelete = this._filter.length;
+    let backspaces = "";
+    for (let i = 0; i < charsToDelete; i++) {
+      backspaces += "\x7F";
+    }
+
+    vscode.postMessage({
+      type: "terminalInput",
+      data: backspaces + toInsert,
+    });
+
+    this._hide();
+  }
+
+  private _escapeHtml(unsafe: string) {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/'/g, "&#039;")
+      .replace(/"/g, "&quot;");
+  }
+}
+
 let terminal: Terminal | null = null;
+let completionProvider: TerminalCompletionProvider | null = null;
 let fitAddon: FitAddon | null = null;
+let currentPlatform: string = "";
 
 function initTerminal(): void {
   const container = document.getElementById("terminal-container");
@@ -29,6 +291,28 @@ function initTerminal(): void {
       foreground: "#cccccc",
     },
     scrollback: 10000,
+  });
+
+  completionProvider = new TerminalCompletionProvider(terminal);
+
+  terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    if (completionProvider && !completionProvider.handleKey(event)) {
+      return false;
+    }
+
+    if (
+      event.ctrlKey &&
+      (event.key === "c" ||
+        event.key === "C" ||
+        event.key === "z" ||
+        event.key === "Z")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    }
+
+    return true;
   });
 
   fitAddon = new FitAddon();
@@ -57,26 +341,44 @@ function initTerminal(): void {
       }
 
       const lineText = line.translateToString(true);
+
+      // Security: Limit line length to prevent ReDoS attacks
+      const MAX_LINE_LENGTH = 10000;
+      if (lineText.length > MAX_LINE_LENGTH) {
+        callback(undefined);
+        return;
+      }
+
       const links: any[] = [];
 
+      // Match OpenCode @file format: @path/to/file or @path/to/file#L10 or @path/to/file#L10-L20
+      // Also match standard file paths: file://, /absolute, ./relative, ../relative, path:line:col
       const pathRegex =
-        /(?:^|[\s"'])((file:\/\/|\/|[A-Z]:\\|\.?\.?\/|[^\s"':\/]+\/)[^\s"']+(?::\d+(?::\d+)?)?)/g;
+        /(?:^[\s"'])(@?((?:file:\/\/|\/|[A-Za-z]:\\|\.?\.?\/)[^\s"'#]+|[^\s"':\/]+(?:\/[^\s"':\/]+)+)(?:#L(\d+)(?:-L?(\d+))?)?)(?=[\s"']|$)/gi;
 
       let match;
+      let lastIndex = -1;
       while ((match = pathRegex.exec(lineText)) !== null) {
-        const fullMatch = match[0];
-        const pathWithPos = match[1];
-        const index = match.index + (fullMatch.length - pathWithPos.length);
+        // Prevent infinite loop on zero-width matches
+        if (match.index === lastIndex) {
+          pathRegex.lastIndex++;
+          continue;
+        }
+        lastIndex = match.index;
 
-        // Parse path, line, column
-        // Pattern: path:line:col or path:line
-        const posRegex = /^(.*?):(\d+)(?::(\d+))?$/;
-        const posMatch = pathWithPos.match(posRegex);
+        const fullMatch = match[1];
+        const hasAtPrefix = fullMatch.startsWith("@");
+        let path = match[2];
+        const lineNumStr = match[3];
+        const endLineStr = match[4];
 
-        let path = pathWithPos;
+        if (!path) continue;
+
         let lineNumber: number | undefined;
         let columnNumber: number | undefined;
+        let endLineNumber: number | undefined;
 
+        // Handle file:// URLs
         if (path.startsWith("file://")) {
           try {
             const url = new URL(path);
@@ -86,34 +388,111 @@ function initTerminal(): void {
             }
           } catch (e) {
             console.error("Failed to parse file:// URL:", path, e);
+            continue;
           }
         }
 
-        if (posMatch) {
-          path = posMatch[1];
-          lineNumber = parseInt(posMatch[2], 10);
-          if (posMatch[3]) {
-            columnNumber = parseInt(posMatch[3], 10);
+        // Parse line numbers from @file#L10 or @file#L10-L20 format
+        if (lineNumStr) {
+          lineNumber = parseInt(lineNumStr, 10);
+        }
+        if (endLineStr) {
+          endLineNumber = parseInt(endLineStr, 10);
+        }
+
+        // Also try to parse :line:col format for standard paths
+        if (!hasAtPrefix && !lineNumStr) {
+          const posRegex = /^(.*?):(\d+)(?::(\d+))?$/;
+          const posMatch = path.match(posRegex);
+          if (posMatch) {
+            path = posMatch[1];
+            lineNumber = parseInt(posMatch[2], 10);
+            if (posMatch[3]) {
+              columnNumber = parseInt(posMatch[3], 10);
+            }
           }
         }
+
+        // Calculate the actual start index of the clickable portion
+        const index = match.index + (match[0].length - fullMatch.length);
 
         links.push({
-          text: pathWithPos,
+          text: fullMatch,
           range: {
             start: { x: index + 1, y: bufferLineNumber },
-            end: { x: index + pathWithPos.length, y: bufferLineNumber },
+            end: { x: index + fullMatch.length, y: bufferLineNumber },
           },
           activate: () => {
             vscode.postMessage({
               type: "openFile",
               path: path,
               line: lineNumber,
+              endLine: endLineNumber,
               column: columnNumber,
             });
           },
         });
       }
 
+      callback(links);
+    },
+  });
+
+  // Register terminal link provider
+  terminal.registerLinkProvider({
+    provideLinks(bufferLineNumber, callback) {
+      if (!terminal) {
+        callback(undefined);
+        return;
+      }
+      const line = terminal.buffer.active.getLine(bufferLineNumber);
+      if (!line) {
+        callback(undefined);
+        return;
+      }
+      const lineText = line.translateToString(true);
+      const links: any[] = [];
+      const terminalRegex = /@terminal:([a-zA-Z0-9_\-\.]+)/g;
+
+      let match;
+      while ((match = terminalRegex.exec(lineText)) !== null) {
+        const fullMatch = match[0];
+        const terminalName = match[1];
+        const index = match.index;
+
+        links.push({
+          text: fullMatch,
+          range: {
+            start: { x: index + 1, y: bufferLineNumber },
+            end: { x: index + fullMatch.length, y: bufferLineNumber },
+          },
+          activate: (event: MouseEvent) => {
+            showTerminalContextMenu(event, terminalName);
+          },
+          hover: (event: MouseEvent, text: string) => {
+            const tooltip = document.createElement("div");
+            tooltip.id = "terminal-tooltip";
+            tooltip.textContent = `Manage terminal: ${terminalName}`;
+            Object.assign(tooltip.style, {
+              position: "absolute",
+              left: `${event.clientX}px`,
+              top: `${event.clientY - 25}px`,
+              backgroundColor: "#252526",
+              border: "1px solid #454545",
+              padding: "2px 6px",
+              zIndex: "1001",
+              color: "#cccccc",
+              fontSize: "12px",
+              pointerEvents: "none",
+            });
+            document.body.appendChild(tooltip);
+          },
+          leave: (event: MouseEvent, text: string) => {
+            const tooltip = document.getElementById("terminal-tooltip");
+            if (tooltip) tooltip.remove();
+          },
+        });
+      }
       callback(links);
     },
   });
@@ -130,6 +509,20 @@ function initTerminal(): void {
 
   terminal.open(container);
 
+  // Fit terminal when container becomes visible using IntersectionObserver
+  const visibilityObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && fitAddon && terminal) {
+          fitAddon.fit();
+          terminal.refresh(0, terminal.rows - 1);
+        }
+      });
+    },
+    { threshold: 0.1 },
+  );
+  visibilityObserver.observe(container);
+
   // Use requestAnimationFrame for initial fit (waits for browser paint)
   requestAnimationFrame(() => {
     if (fitAddon && terminal) {
@@ -141,10 +534,35 @@ function initTerminal(): void {
   setTimeout(() => {
     if (fitAddon && terminal) {
       fitAddon.fit();
+      terminal.refresh(0, terminal.rows - 1);
     }
   }, 100);
 
+  // Additional fit after a longer delay to handle slow rendering
+  setTimeout(() => {
+    if (fitAddon && terminal) {
+      fitAddon.fit();
+      terminal.refresh(0, terminal.rows - 1);
+    }
+  }, 500);
+
   terminal.onData((data) => {
+    // Filter out Ctrl+C (\x03) and Ctrl+Z (\x1A) to prevent
+    // them from terminating the OpenCode process on all platforms
+    const filteredData = data.replace(/[\x03\x1A]/g, "");
+    if (filteredData !== data) {
+      if (filteredData) {
+        vscode.postMessage({
+          type: "terminalInput",
+          data: filteredData,
+        });
+      }
+      return;
+    }
+
+    if (completionProvider) {
+      completionProvider.handleData(data);
+    }
     vscode.postMessage({
       type: "terminalInput",
       data: data,
@@ -269,10 +687,102 @@ function initTerminal(): void {
   vscode.postMessage({ type: "ready" });
 }
 
+function showTerminalContextMenu(event: MouseEvent, terminalName: string) {
+  const existing = document.getElementById("terminal-context-menu");
+  if (existing) existing.remove();
+
+  const menu = document.createElement("div");
+  menu.id = "terminal-context-menu";
+  Object.assign(menu.style, {
+    position: "absolute",
+    left: `${event.clientX}px`,
+    top: `${event.clientY}px`,
+    backgroundColor: "#252526",
+    border: "1px solid #454545",
+    padding: "4px 0",
+    zIndex: "1000",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+    color: "#cccccc",
+    fontFamily: "system-ui, sans-serif",
+    fontSize: "13px",
+    minWidth: "150px",
+  });
+
+  const createItem = (label: string, onClick: () => void) => {
+    const item = document.createElement("div");
+    item.textContent = label;
+    Object.assign(item.style, {
+      padding: "4px 12px",
+      cursor: "pointer",
+    });
+    item.addEventListener(
+      "mouseenter",
+      () => (item.style.backgroundColor = "#094771"),
+    );
+    item.addEventListener(
+      "mouseleave",
+      () => (item.style.backgroundColor = "transparent"),
+    );
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+      menu.remove();
+    });
+    return item;
+  };
+
+  menu.appendChild(
+    createItem("Focus Terminal", () => {
+      vscode.postMessage({
+        type: "terminalAction",
+        action: "focus",
+        terminalName,
+      });
+    }),
+  );
+
+  menu.appendChild(
+    createItem("Send Command...", () => {
+      const cmd = window.prompt("Enter command to send:");
+      if (cmd) {
+        vscode.postMessage({
+          type: "terminalAction",
+          action: "sendCommand",
+          terminalName,
+          command: cmd,
+        });
+      }
+    }),
+  );
+
+  menu.appendChild(
+    createItem("Start Capture", () => {
+      vscode.postMessage({
+        type: "terminalAction",
+        action: "capture",
+        terminalName,
+      });
+    }),
+  );
+
+  document.body.appendChild(menu);
+
+  const closeMenu = () => {
+    menu.remove();
+    document.removeEventListener("click", closeMenu);
+  };
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
+}
+
 window.addEventListener("message", (event) => {
   const message = event.data as HostMessage;
 
   switch (message.type) {
+    case "terminalList":
+      if (completionProvider) {
+        completionProvider.updateTerminals(message.terminals);
+      }
+      break;
     case "terminalOutput":
       if (terminal) {
         terminal.write(message.data);
@@ -287,6 +797,18 @@ window.addEventListener("message", (event) => {
       if (terminal) {
         terminal.focus();
       }
+      break;
+    case "webviewVisible":
+      // Refit and refresh terminal when webview becomes visible
+      setTimeout(() => {
+        if (fitAddon && terminal) {
+          fitAddon.fit();
+          terminal.refresh(0, terminal.rows - 1);
+        }
+      }, 100);
+      break;
+    case "platformInfo":
+      currentPlatform = message.platform;
       break;
   }
 });

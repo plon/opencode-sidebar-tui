@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import { TerminalManager } from "../terminals/TerminalManager";
+import { TerminalDiscoveryService } from "../services/TerminalDiscoveryService";
+import { OutputCaptureManager } from "../services/OutputCaptureManager";
 
 export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "opencodeTui";
@@ -10,6 +12,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly terminalManager: TerminalManager,
+    private readonly discoveryService: TerminalDiscoveryService,
+    private readonly captureManager: OutputCaptureManager,
   ) {}
 
   resolveWebviewView(
@@ -38,9 +42,13 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       } else {
         // Wait until sidebar becomes visible
         const visibilityListener = webviewView.onDidChangeVisibility(() => {
-          if (webviewView.visible && !this.isStarted) {
-            this.startOpenCode();
-            visibilityListener.dispose(); // Only trigger once
+          if (webviewView.visible) {
+            // Notify webview that it's now visible so it can refit the terminal
+            this._view?.webview.postMessage({ type: "webviewVisible" });
+            if (!this.isStarted) {
+              this.startOpenCode();
+              visibilityListener.dispose(); // Only trigger once
+            }
           }
         });
 
@@ -87,6 +95,12 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     this.isStarted = true;
   }
 
+  restart(): void {
+    this.terminalManager.killTerminal(this.terminalId);
+    this.isStarted = false;
+    this.startOpenCode();
+  }
+
   private handleMessage(message: any): void {
     switch (message.type) {
       case "terminalInput":
@@ -103,6 +117,11 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         if (!this.isStarted) {
           this.startOpenCode();
         }
+        // Send platform info to webview for Windows-specific handling
+        this._view?.webview.postMessage({
+          type: "platformInfo",
+          platform: process.platform,
+        });
         break;
       case "filesDropped":
         this.handleFilesDropped(message.files, message.shiftKey);
@@ -111,16 +130,127 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         vscode.env.openExternal(vscode.Uri.parse(message.url));
         break;
       case "openFile":
-        this.handleOpenFile(message.path, message.line, message.column);
+        this.handleOpenFile(
+          message.path,
+          message.line,
+          message.endLine,
+          message.column,
+        );
         break;
+      case "listTerminals":
+        this.handleListTerminals();
+        break;
+      case "terminalAction":
+        this.handleTerminalAction(
+          message.action,
+          message.terminalName,
+          message.command,
+        );
+        break;
+    }
+  }
+
+  private async handleListTerminals(): Promise<void> {
+    const terminals = await this.discoveryService.getTerminals();
+    this._view?.webview.postMessage({
+      type: "terminalList",
+      terminals: terminals,
+    });
+  }
+
+  private async handleTerminalAction(
+    action: "focus" | "sendCommand" | "capture",
+    terminalName: string,
+    command?: string,
+  ): Promise<void> {
+    const terminals = vscode.window.terminals;
+
+    let targetTerminal: vscode.Terminal | undefined = terminals.find(
+      (t) => t.name === terminalName,
+    );
+
+    if (!targetTerminal) {
+      const terminalInfos = await this.discoveryService.getTerminals();
+      const info = terminalInfos.find((t) => t.name === terminalName);
+      if (info) {
+        for (const t of terminals) {
+          const pid = await t.processId;
+          if (pid === info.pid) {
+            targetTerminal = t;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!targetTerminal) {
+      console.warn(`Terminal not found: ${terminalName}`);
+      return;
+    }
+
+    switch (action) {
+      case "focus":
+        targetTerminal.show();
+        break;
+      case "sendCommand":
+        if (command) {
+          await this.sendCommandToTerminal(targetTerminal, command);
+        }
+        break;
+      case "capture":
+        try {
+          this.captureManager.startCapture(targetTerminal);
+          vscode.window.showInformationMessage(
+            `Started capturing terminal: ${terminalName}`,
+          );
+        } catch (e) {
+          vscode.window.showErrorMessage(`Failed to start capture: ${e}`);
+        }
+        break;
+    }
+  }
+
+  private async sendCommandToTerminal(
+    terminal: vscode.Terminal,
+    command: string,
+  ): Promise<void> {
+    const configKey = "opencodeTui.allowTerminalCommands";
+    const allowed = this.context.globalState.get<boolean>(configKey);
+
+    if (allowed) {
+      terminal.sendText(command);
+      return;
+    }
+
+    const result = await vscode.window.showInformationMessage(
+      "Allow OpenCode to send commands to external terminals?",
+      "Yes",
+      "Yes, don't ask again",
+      "No",
+    );
+
+    if (result === "Yes") {
+      terminal.sendText(command);
+    } else if (result === "Yes, don't ask again") {
+      await this.context.globalState.update(configKey, true);
+      terminal.sendText(command);
     }
   }
 
   private async handleOpenFile(
     path: string,
     line?: number,
+    endLine?: number,
     column?: number,
   ): Promise<void> {
+    // Security: Validate path to prevent path traversal attacks
+    if (path.includes("..") || path.includes("\0") || path.includes("~")) {
+      vscode.window.showErrorMessage(
+        "Invalid file path: Path traversal detected",
+      );
+      return;
+    }
+
     try {
       const normalizedPath = path.replace(/\\/g, "/");
 
@@ -140,14 +270,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       }
 
       try {
-        const selection = line
-          ? new vscode.Range(
-              Math.max(0, line - 1),
-              Math.max(0, (column || 1) - 1),
-              Math.max(0, line - 1),
-              Math.max(0, (column || 1) - 1),
-            )
-          : undefined;
+        const selection = this.createSelection(line, endLine, column);
 
         await vscode.window.showTextDocument(uri, {
           selection,
@@ -156,14 +279,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       } catch (openError) {
         const matchedUri = await this.fuzzyMatchFile(normalizedPath);
         if (matchedUri) {
-          const selection = line
-            ? new vscode.Range(
-                Math.max(0, line - 1),
-                Math.max(0, (column || 1) - 1),
-                Math.max(0, line - 1),
-                Math.max(0, (column || 1) - 1),
-              )
-            : undefined;
+          const selection = this.createSelection(line, endLine, column);
 
           await vscode.window.showTextDocument(matchedUri, {
             selection,
@@ -176,6 +292,22 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to open file: ${path}`);
     }
+  }
+
+  private createSelection(
+    line?: number,
+    endLine?: number,
+    column?: number,
+  ): vscode.Range | undefined {
+    if (!line) return undefined;
+
+    const MAX_COLUMN = 9999;
+    return new vscode.Range(
+      Math.max(0, line - 1),
+      Math.max(0, (column || 1) - 1),
+      Math.max(0, (endLine || line) - 1),
+      endLine ? MAX_COLUMN : Math.max(0, (column || 1) - 1),
+    );
   }
 
   private async fuzzyMatchFile(path: string): Promise<vscode.Uri | null> {

@@ -29,26 +29,20 @@ export class TerminalManager {
     const { shell, args: shellArgs } = this.getShellConfig();
     const ptyArgs = command ? [...shellArgs, command] : [];
 
-    const ptyProcess = pty.spawn(shell, ptyArgs, {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
-      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
-      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
-    });
-
     const onDataEmitter = new vscode.EventEmitter<{
       id: string;
       data: string;
     }>();
     const onExitEmitter = new vscode.EventEmitter<string>();
 
-    const terminal: Terminal = {
-      id,
-      process: ptyProcess,
-      onData: onDataEmitter,
-      onExit: onExitEmitter,
-    };
+    const ptyProcess = pty.spawn(shell, ptyArgs, {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
+      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+      handleFlowControl: false,
+    });
 
     ptyProcess.onData((data) => {
       onDataEmitter.fire({ id, data });
@@ -61,6 +55,13 @@ export class TerminalManager {
       this.terminals.delete(id);
     });
 
+    const terminal: Terminal = {
+      id,
+      process: ptyProcess,
+      onData: onDataEmitter,
+      onExit: onExitEmitter,
+    };
+
     this.terminals.set(id, terminal);
     return terminal;
   }
@@ -72,7 +73,10 @@ export class TerminalManager {
   writeToTerminal(id: string, data: string): void {
     const terminal = this.terminals.get(id);
     if (terminal) {
-      terminal.process.write(data);
+      const filteredData = data.replace(/[\x03\x1A]/g, "");
+      if (filteredData) {
+        terminal.process.write(filteredData);
+      }
     }
   }
 

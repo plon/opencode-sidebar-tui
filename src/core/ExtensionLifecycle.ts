@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { OpenCodeTuiProvider } from "../providers/OpenCodeTuiProvider";
 import { TerminalManager } from "../terminals/TerminalManager";
+import { TerminalDiscoveryService } from "../services/TerminalDiscoveryService";
+import { OutputCaptureManager } from "../services/OutputCaptureManager";
 
 /**
  * Manages extension activation, service initialization, and cleanup.
@@ -8,6 +10,8 @@ import { TerminalManager } from "../terminals/TerminalManager";
 export class ExtensionLifecycle {
   private terminalManager: TerminalManager | undefined;
   private tuiProvider: OpenCodeTuiProvider | undefined;
+  private discoveryService: TerminalDiscoveryService | undefined;
+  private captureManager: OutputCaptureManager | undefined;
 
   async activate(context: vscode.ExtensionContext): Promise<void> {
     console.log("Initializing OpenCode Sidebar TUI...");
@@ -16,8 +20,24 @@ export class ExtensionLifecycle {
       // Initialize terminal manager
       this.terminalManager = new TerminalManager();
 
+      // Initialize services
+      this.discoveryService = new TerminalDiscoveryService();
+      this.captureManager = new OutputCaptureManager();
+
+      // Handle terminal closure for cleanup
+      context.subscriptions.push(
+        vscode.window.onDidCloseTerminal((terminal) => {
+          this.captureManager?.cleanup(terminal);
+        }),
+      );
+
       // Initialize TUI provider
-      this.tuiProvider = new OpenCodeTuiProvider(context, this.terminalManager);
+      this.tuiProvider = new OpenCodeTuiProvider(
+        context,
+        this.terminalManager,
+        this.discoveryService,
+        this.captureManager,
+      );
 
       // Register webview provider
       const provider = vscode.window.registerWebviewViewProvider(
@@ -79,7 +99,7 @@ export class ExtensionLifecycle {
       },
     );
 
-    // Send current file reference (@filename)
+    // Send current file reference (@filename) or terminal CWD
     const sendAtMentionCommand = vscode.commands.registerCommand(
       "opencodeTui.sendAtMention",
       () => {
@@ -99,7 +119,18 @@ export class ExtensionLifecycle {
           }
 
           vscode.window.showInformationMessage(`Sent ${fileRef}`);
+        } else {
+          // If no editor is active but terminal is focused, send terminal CWD
+          this.sendTerminalCwd();
         }
+      },
+    );
+
+    // Send terminal's current working directory
+    const sendTerminalCwdCommand = vscode.commands.registerCommand(
+      "opencodeTui.sendTerminalCwd",
+      () => {
+        this.sendTerminalCwd();
       },
     );
 
@@ -107,9 +138,22 @@ export class ExtensionLifecycle {
     const sendAllOpenFilesCommand = vscode.commands.registerCommand(
       "opencodeTui.sendAllOpenFiles",
       () => {
-        const openFiles = vscode.window.visibleTextEditors
-          .map((editor) => this.formatFileRef(editor.document.uri))
-          .join(" ");
+        const fileRefs: string[] = [];
+
+        // Get all opened tabs across all editor groups (not just visible ones)
+        for (const group of vscode.window.tabGroups.all) {
+          for (const tab of group.tabs) {
+            if (tab.input instanceof vscode.TabInputText) {
+              const uri = tab.input.uri;
+              // Skip untitled/unsaved documents
+              if (!uri.scheme.startsWith("untitled")) {
+                fileRefs.push(this.formatFileRef(uri));
+              }
+            }
+          }
+        }
+
+        const openFiles = fileRefs.join(" ");
 
         if (openFiles) {
           this.terminalManager?.writeToTerminal(
@@ -155,12 +199,23 @@ export class ExtensionLifecycle {
       },
     );
 
+    // Restart OpenCode command
+    const restartCommand = vscode.commands.registerCommand(
+      "opencodeTui.restart",
+      () => {
+        this.tuiProvider?.restart();
+        vscode.window.showInformationMessage("OpenCode restarted");
+      },
+    );
+
     context.subscriptions.push(
       startCommand,
       sendToTerminalCommand,
       sendAtMentionCommand,
       sendAllOpenFilesCommand,
       sendFileToTerminalCommand,
+      restartCommand,
+      sendTerminalCwdCommand,
     );
   }
 
@@ -191,6 +246,44 @@ export class ExtensionLifecycle {
     return reference;
   }
 
+  private async sendTerminalCwd(): Promise<void> {
+    const activeTerminal = vscode.window.activeTerminal;
+    if (!activeTerminal) {
+      vscode.window.showWarningMessage("No active terminal");
+      return;
+    }
+
+    const cwd = activeTerminal.shellIntegration?.cwd?.fsPath;
+    if (!cwd) {
+      vscode.window.showWarningMessage(
+        "Could not determine terminal working directory. Make sure shell integration is enabled.",
+      );
+      return;
+    }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let reference: string;
+
+    if (workspaceFolders && workspaceFolders.length > 0) {
+      const relativePath = vscode.workspace.asRelativePath(cwd, false);
+      reference = `@${relativePath}`;
+    } else {
+      reference = `@${cwd}`;
+    }
+
+    this.terminalManager?.writeToTerminal("opencode-main", reference + " ");
+
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    if (config.get<boolean>("autoFocusOnSend", true)) {
+      vscode.commands.executeCommand("opencodeTui.focus");
+      setTimeout(() => {
+        this.tuiProvider?.focus();
+      }, 100);
+    }
+
+    vscode.window.showInformationMessage(`Sent ${reference}`);
+  }
+
   async deactivate(): Promise<void> {
     console.log("Deactivating OpenCode Sidebar TUI...");
 
@@ -203,6 +296,13 @@ export class ExtensionLifecycle {
       this.terminalManager.dispose();
       this.terminalManager = undefined;
     }
+
+    if (this.discoveryService) {
+      this.discoveryService.dispose();
+      this.discoveryService = undefined;
+    }
+
+    this.captureManager = undefined;
 
     console.log("OpenCode Sidebar TUI deactivated");
   }
