@@ -40,10 +40,6 @@ jobs:
           registryUrl: https://marketplace.visualstudio.com
 
       # Step 6: Publish to Open VSX Registry
-      - name: Update publisher for Open VSX
-        run: |
-          sed -i 's/"publisher": "islee23520"/"publisher": "islee"/' package.json
-
       - name: Publish to Open VSX Registry
         uses: HaaLeo/publish-vscode-extension@v1
         with:
