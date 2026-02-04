@@ -297,7 +297,6 @@ echo "5. Verify restart and clear buttons work"
 echo ""
 echo -e "${CYAN}Debug logs:${NC}"
 echo "  In Dev Host: Ctrl+Shift+I → Console tab"
-echo "  Search for: 'OpenCode' or 'Terminal'"
 echo ""
 
 if confirm "Open Extension Development Host now?"; then

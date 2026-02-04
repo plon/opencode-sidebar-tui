@@ -277,6 +277,7 @@ let terminal: Terminal | null = null;
 let completionProvider: TerminalCompletionProvider | null = null;
 let fitAddon: FitAddon | null = null;
 let currentPlatform: string = "";
+let justHandledCtrlC = false;
 
 function initTerminal(): void {
   const container = document.getElementById("terminal-container");
@@ -300,13 +301,43 @@ function initTerminal(): void {
       return false;
     }
 
-    if (
+    const isCtrlC =
       event.ctrlKey &&
-      (event.key === "c" ||
-        event.key === "C" ||
-        event.key === "z" ||
-        event.key === "Z")
-    ) {
+      !event.shiftKey &&
+      !event.altKey &&
+      (event.key === "c" || event.key === "C");
+    const isCtrlZ =
+      event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      (event.key === "z" || event.key === "Z");
+
+    if (isCtrlC) {
+      if (currentPlatform === "win32" && terminal) {
+        const selection = terminal.getSelection();
+        if (selection && selection.length > 0) {
+          navigator.clipboard.writeText(selection).catch((err) => {
+            console.error("Failed to copy to clipboard:", err);
+          });
+          justHandledCtrlC = true;
+          // Reset flag after a short delay to prevent the subsequent onData event
+          // (triggered by xterm.js when Ctrl+C is pressed) from being filtered.
+          // The 100ms duration is chosen to be longer than typical event propagation
+          // but short enough to not interfere with normal user input.
+          setTimeout(() => {
+            justHandledCtrlC = false;
+          }, 100);
+          event.preventDefault();
+          event.stopPropagation();
+          return false;
+        }
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    }
+
+    if (isCtrlZ) {
       event.preventDefault();
       event.stopPropagation();
       return false;
@@ -509,6 +540,10 @@ function initTerminal(): void {
 
   terminal.open(container);
 
+  const refreshTerminal = () => terminal?.refresh(0, terminal.rows - 1);
+  container.addEventListener("focusin", refreshTerminal);
+  container.addEventListener("click", refreshTerminal);
+
   // Fit terminal when container becomes visible using IntersectionObserver
   const visibilityObserver = new IntersectionObserver(
     (entries) => {
@@ -547,11 +582,13 @@ function initTerminal(): void {
   }, 500);
 
   terminal.onData((data) => {
-    // Filter out Ctrl+C (\x03) and Ctrl+Z (\x1A) to prevent
-    // them from terminating the OpenCode process on all platforms
-    const filteredData = data.replace(/[\x03\x1A]/g, "");
-    if (filteredData !== data) {
+    if (justHandledCtrlC) {
+      justHandledCtrlC = false;
+      const filteredData = data.replace(/[\x03\x1A]/g, "");
       if (filteredData) {
+        if (completionProvider) {
+          completionProvider.handleData(filteredData);
+        }
         vscode.postMessage({
           type: "terminalInput",
           data: filteredData,
@@ -560,13 +597,18 @@ function initTerminal(): void {
       return;
     }
 
-    if (completionProvider) {
-      completionProvider.handleData(data);
+    const filteredData = data.replace(/[\x03\x1A]/g, "");
+
+    if (completionProvider && filteredData) {
+      completionProvider.handleData(filteredData);
     }
-    vscode.postMessage({
-      type: "terminalInput",
-      data: data,
-    });
+
+    if (filteredData) {
+      vscode.postMessage({
+        type: "terminalInput",
+        data: filteredData,
+      });
+    }
   });
 
   terminal.onResize(({ cols, rows }) => {
