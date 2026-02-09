@@ -16,6 +16,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   private readonly contextSharingService: ContextSharingService;
   private httpAvailable = false;
   private autoContextSent = false;
+  private dataHandlerDisposable?: vscode.Disposable;
+  private exitHandlerDisposable?: vscode.Disposable;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -120,7 +122,10 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       port,
     );
 
-    this.terminalManager.onData((event) => {
+    this.dataHandlerDisposable?.dispose();
+    this.exitHandlerDisposable?.dispose();
+
+    this.dataHandlerDisposable = this.terminalManager.onData((event) => {
       if (event.id === this.terminalId) {
         this._view?.webview.postMessage({
           type: "terminalOutput",
@@ -129,7 +134,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    this.terminalManager.onExit((id) => {
+    this.exitHandlerDisposable = this.terminalManager.onExit((id) => {
       if (id === this.terminalId) {
         this.isStarted = false;
         this.httpAvailable = false;
@@ -254,8 +259,11 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   restart(): void {
+    this.dataHandlerDisposable?.dispose();
+    this.exitHandlerDisposable?.dispose();
     this.terminalManager.killTerminal(this.terminalId);
     this.isStarted = false;
+    this._view?.webview.postMessage({ type: "clearTerminal" });
     this.startOpenCode();
   }
 
@@ -609,6 +617,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   dispose(): void {
+    this.dataHandlerDisposable?.dispose();
+    this.exitHandlerDisposable?.dispose();
     if (this.isStarted) {
       this.terminalManager.killTerminal(this.terminalId);
     }

@@ -840,6 +840,15 @@ window.addEventListener("message", (event) => {
         terminal.write(message.data);
       }
       break;
+    case "clearTerminal":
+      if (terminal) {
+        terminal.reset();
+        if (fitAddon) {
+          fitAddon.fit();
+        }
+        terminal.refresh(0, terminal.rows - 1);
+      }
+      break;
     case "terminalExited":
       if (terminal) {
         terminal.write("\r\n\x1b[31mOpenCode exited\x1b[0m\r\n");

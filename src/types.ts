@@ -25,6 +25,7 @@ export type HostMessage =
   | { type: "clipboardContent"; text: string }
   | { type: "terminalOutput"; data: string }
   | { type: "terminalExited" }
+  | { type: "clearTerminal" }
   | { type: "focusTerminal" }
   | { type: "terminalList"; terminals: { name: string; cwd: string }[] }
   | { type: "webviewVisible" }
