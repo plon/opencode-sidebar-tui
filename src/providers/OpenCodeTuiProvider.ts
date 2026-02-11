@@ -16,6 +16,10 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   private readonly contextSharingService: ContextSharingService;
   private httpAvailable = false;
   private autoContextSent = false;
+  private dataListener?: vscode.Disposable;
+  private exitListener?: vscode.Disposable;
+  private lastKnownCols: number = 0;
+  private lastKnownRows: number = 0;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -45,11 +49,17 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       this.handleMessage(message);
     });
 
+    if (this.isStarted) {
+      this.reconnectListeners();
+    }
+
     const config = vscode.workspace.getConfiguration("opencodeTui");
     if (config.get<boolean>("autoStartOnOpen", true)) {
       // Only start if sidebar is currently visible
       if (webviewView.visible) {
-        this.startOpenCode();
+        if (!this.isStarted) {
+          this.startOpenCode();
+        }
       } else {
         // Wait until sidebar becomes visible
         const visibilityListener = webviewView.onDidChangeVisibility(() => {
@@ -69,6 +79,35 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Reconnect data/exit listeners when the webview is re-created.
+   */
+  private reconnectListeners(): void {
+    this.disposeListeners();
+
+    this.dataListener = this.terminalManager.onData((event) => {
+      if (event.id === this.terminalId) {
+        this._view?.webview.postMessage({
+          type: "terminalOutput",
+          data: event.data,
+        });
+      }
+    });
+
+    this.exitListener = this.terminalManager.onExit((id) => {
+      if (id === this.terminalId) {
+        this.isStarted = false;
+        this.httpAvailable = false;
+        this.apiClient = undefined;
+        this.autoContextSent = false;
+        this.portManager.releaseTerminalPorts(this.terminalId);
+        this._view?.webview.postMessage({
+          type: "terminalExited",
+        });
+      }
+    });
+  }
+
   public focus(): void {
     if (this._view && this._view.webview) {
       this._view.webview.postMessage({ type: "focusTerminal" });
@@ -86,6 +125,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     if (this.isStarted) {
       return;
     }
+
+    this.disposeListeners();
 
     const config = vscode.workspace.getConfiguration("opencodeTui");
     const enableHttpApi = config.get<boolean>("enableHttpApi", true);
@@ -118,9 +159,11 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
           }
         : {},
       port,
+      this.lastKnownCols || undefined,
+      this.lastKnownRows || undefined,
     );
 
-    this.terminalManager.onData((event) => {
+    this.dataListener = this.terminalManager.onData((event) => {
       if (event.id === this.terminalId) {
         this._view?.webview.postMessage({
           type: "terminalOutput",
@@ -129,7 +172,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    this.terminalManager.onExit((id) => {
+    this.exitListener = this.terminalManager.onExit((id) => {
       if (id === this.terminalId) {
         this.isStarted = false;
         this.httpAvailable = false;
@@ -254,9 +297,28 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   restart(): void {
+    this.disposeListeners();
     this.terminalManager.killTerminal(this.terminalId);
     this.isStarted = false;
+    this.httpAvailable = false;
+    this.apiClient = undefined;
+    this.autoContextSent = false;
+    this.portManager.releaseTerminalPorts(this.terminalId);
+
+    this._view?.webview.postMessage({ type: "clearTerminal" });
+
     this.startOpenCode();
+  }
+
+  private disposeListeners(): void {
+    if (this.dataListener) {
+      this.dataListener.dispose();
+      this.dataListener = undefined;
+    }
+    if (this.exitListener) {
+      this.exitListener.dispose();
+      this.exitListener = undefined;
+    }
   }
 
   private handleMessage(message: any): void {
@@ -265,6 +327,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         this.terminalManager.writeToTerminal(this.terminalId, message.data);
         break;
       case "terminalResize":
+        this.lastKnownCols = message.cols;
+        this.lastKnownRows = message.rows;
         this.terminalManager.resizeTerminal(
           this.terminalId,
           message.cols,
@@ -272,8 +336,20 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         );
         break;
       case "ready":
+        if (message.cols && message.rows) {
+          this.lastKnownCols = message.cols;
+          this.lastKnownRows = message.rows;
+        }
         if (!this.isStarted) {
           this.startOpenCode();
+        } else {
+          if (this.lastKnownCols && this.lastKnownRows) {
+            this.terminalManager.resizeTerminal(
+              this.terminalId,
+              this.lastKnownCols,
+              this.lastKnownRows,
+            );
+          }
         }
         // Send platform info to webview for Windows-specific handling
         this._view?.webview.postMessage({
@@ -609,6 +685,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   dispose(): void {
+    this.disposeListeners();
     if (this.isStarted) {
       this.terminalManager.killTerminal(this.terminalId);
     }
