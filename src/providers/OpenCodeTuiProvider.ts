@@ -45,11 +45,19 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
+    const processAlive =
+      this.isStarted &&
+      this.terminalManager.getTerminal(this.terminalId) !== undefined;
+
+    if (this.isStarted && !processAlive) {
+      this.resetState();
+    }
+
     webviewView.webview.onDidReceiveMessage((message) => {
       this.handleMessage(message);
     });
 
-    if (this.isStarted) {
+    if (processAlive) {
       this.reconnectListeners();
     }
 
@@ -96,11 +104,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
 
     this.exitListener = this.terminalManager.onExit((id) => {
       if (id === this.terminalId) {
-        this.isStarted = false;
-        this.httpAvailable = false;
-        this.apiClient = undefined;
-        this.autoContextSent = false;
-        this.portManager.releaseTerminalPorts(this.terminalId);
+        this.resetState();
         this._view?.webview.postMessage({
           type: "terminalExited",
         });
@@ -174,11 +178,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
 
     this.exitListener = this.terminalManager.onExit((id) => {
       if (id === this.terminalId) {
-        this.isStarted = false;
-        this.httpAvailable = false;
-        this.apiClient = undefined;
-        this.autoContextSent = false;
-        this.portManager.releaseTerminalPorts(this.terminalId);
+        this.resetState();
         this._view?.webview.postMessage({
           type: "terminalExited",
         });
@@ -299,15 +299,19 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   restart(): void {
     this.disposeListeners();
     this.terminalManager.killTerminal(this.terminalId);
+    this.resetState();
+
+    this._view?.webview.postMessage({ type: "clearTerminal" });
+
+    this.startOpenCode();
+  }
+
+  private resetState(): void {
     this.isStarted = false;
     this.httpAvailable = false;
     this.apiClient = undefined;
     this.autoContextSent = false;
     this.portManager.releaseTerminalPorts(this.terminalId);
-
-    this._view?.webview.postMessage({ type: "clearTerminal" });
-
-    this.startOpenCode();
   }
 
   private disposeListeners(): void {
